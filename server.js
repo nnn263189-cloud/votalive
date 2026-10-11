@@ -154,6 +154,8 @@ app.get('/healthz', (_request, response) => {
   response.json({
     ok: true,
     connection: connectionStatus.phase,
+    username: connectionStatus.username,
+    message: connectionStatus.message,
     sessionId: store.snapshot().session?.id || null,
   });
 });
