@@ -1,0 +1,29 @@
+
+name: Extrair ZIP do VotaLive
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extrair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar arquivos do repositorio
+        uses: actions/checkout@v4
+
+      - name: Extrair arquivos
+        run: |
+          unzip -q revogalive.zip -d extraido
+          cp -a extraido/votalive/. .
+          rm -rf extraido revogalive.zip
+
+      - name: Salvar arquivos no GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Extrair arquivos do VotaLive"
+          git push
