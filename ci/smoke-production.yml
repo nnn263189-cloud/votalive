@@ -35,6 +35,13 @@ jobs:
               }
             }
             console.log("healthz OK:", JSON.stringify(health));
+            console.log("fase:", health.connection);
+            console.log("assinatura configurada (signing):", health.signing);
+            console.log("fallback Euler desativado:", health.eulerFallbackDisabled);
+            console.log("tipo da falha (kind):", health.kind);
+            console.log("causas (codes):", JSON.stringify(health.codes || []));
+            if (health.hint) console.log("dica:", health.hint);
+            if (health.message) console.log("mensagem do conector:", health.message);
           '
 
       - name: Verificar /api/state

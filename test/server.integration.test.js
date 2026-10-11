@@ -93,6 +93,11 @@ test('servidor inicia, protege comandos e restaura o placar ao reconectar', { ti
   assert.equal(health.connection, 'idle');
   assert.equal(health.username, null);
   assert.equal(health.message, null);
+  assert.equal(health.kind, null);
+  assert.equal(health.hint, null);
+  assert.deepEqual(health.codes, []);
+  assert.equal(health.signing, false);
+  assert.equal(health.eulerFallbackDisabled, false);
   const page = await fetch(baseUrl).then((response) => response.text());
   assert.match(page, /id="totalParticipants"/);
   assert.match(page, /src="app\.js"/);
