@@ -10,6 +10,11 @@ import WebSocket from 'ws';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+function withoutVariable(env, name) {
+  const { [name]: _removed, ...rest } = env;
+  return rest;
+}
+
 function waitForMessage(socket, predicate, timeoutMs = 3_000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -48,7 +53,7 @@ test('servidor inicia, protege comandos e restaura o placar ao reconectar', { ti
   const child = spawn(process.execPath, ['server.js'], {
     cwd: projectRoot,
     env: {
-      ...process.env,
+      ...withoutVariable(process.env, 'TIKTOK_EXTENDED_GIFT_INFO'),
       PORT: '0',
       HOST: '127.0.0.1',
       NODE_ENV: 'test',
@@ -98,6 +103,7 @@ test('servidor inicia, protege comandos e restaura o placar ao reconectar', { ti
   assert.deepEqual(health.codes, []);
   assert.equal(health.signing, false);
   assert.equal(health.eulerFallbackDisabled, false);
+  assert.equal(health.extendedGiftInfo, false);
   const page = await fetch(baseUrl).then((response) => response.text());
   assert.match(page, /id="totalParticipants"/);
   assert.match(page, /src="app\.js"/);
@@ -137,4 +143,58 @@ test('servidor inicia, protege comandos e restaura o placar ao reconectar', { ti
   const persisted = JSON.parse(await readFile(stateFile, 'utf8'));
   assert.equal(persisted.scores.A, 10);
   assert.equal(persisted.totalGifts, 1);
+});
+
+test('catálogo de presentes ligado por variável: avisa no log de inicialização e aparece no /healthz', { timeout: 15_000 }, async (t) => {
+  const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'votalive-test-'));
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      PORT: '0',
+      HOST: '127.0.0.1',
+      NODE_ENV: 'test',
+      ADMIN_TOKEN: 'token-de-integracao-com-32-caracteres',
+      STATE_FILE: path.join(temporaryDirectory, 'state.json'),
+      TIKTOK_EXTENDED_GIFT_INFO: 'true',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let logs = '';
+  const exitPromise = new Promise((resolve) => child.once('exit', resolve));
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGTERM');
+      await exitPromise;
+    }
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+
+  const port = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Servidor não iniciou. Logs: ${logs}`)), 6_000);
+    const inspect = (chunk) => {
+      logs += String(chunk);
+      const match = logs.match(/http:\/\/127\.0\.0\.1:(\d+)/);
+      if (match) {
+        clearTimeout(timeout);
+        resolve(Number(match[1]));
+      }
+    };
+    child.stdout.on('data', inspect);
+    child.stderr.on('data', inspect);
+    child.once('exit', (code) => {
+      clearTimeout(timeout);
+      reject(new Error(`Servidor encerrou antes de iniciar (${code}). Logs: ${logs}`));
+    });
+  });
+
+  const health = await fetch(`http://127.0.0.1:${port}/healthz`).then((response) => response.json());
+  assert.equal(health.ok, true);
+  assert.equal(health.extendedGiftInfo, true);
+  assert.match(logs, /TIKTOK_EXTENDED_GIFT_INFO=true.*gift\/list\//);
+  assert.match(logs, /Catálogo de presentes: ativo/);
+
+  child.kill('SIGTERM');
+  assert.equal(await exitPromise, 0, logs);
 });

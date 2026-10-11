@@ -90,12 +90,24 @@ Para liberar a conexão:
 
 A chave nunca é gravada no Git nem enviada ao navegador; o servidor apenas informa se ela existe e qual foi o tipo da última falha:
 
-- `GET /healthz` devolve `signing`, `kind`, `hint` e `codes` (identificadores curtos das falhas internas), além de `connection`, `username` e `message`;
+- `GET /healthz` devolve `signing`, `extendedGiftInfo`, `kind`, `hint` e `codes` (identificadores curtos das falhas internas), além de `connection`, `username` e `message`;
 - o painel mostra a dica acionável nos estados `ERRO` e `RECONECTANDO` e no aviso do TikTok;
 - o log do servidor avisa `SIGN_API_KEY não definida` quando a chave está ausente;
-- `kind` classifica a falha em `signing`, `rate_limit`, `offline`, `network` ou `unknown`.
+- `kind` classifica a falha em `signing`, `plan`, `rate_limit`, `offline`, `network`, `room_id` ou `unknown`. `plan` significa que a Euler Stream respondeu, mas o plano não inclui a rota (`PremiumFeatureError`); a dica não manda redefinir a chave, porque trocar a chave por outra do mesmo plano não resolve.
 
 Se a falha for na descoberta da sala (`Failed to retrieve Room ID from Euler Stream … lack of permission`), a alternativa documentada pelo conector é desativar a rota de fallback com `TIKTOK_SKIP_EULER_FALLBACK=true`, mantendo apenas as rotas nativas do TikTok.
+
+### Catálogo de presentes: desativado por padrão (`TIKTOK_EXTENDED_GIFT_INFO`)
+
+O conector tem a opção `enableExtendedGiftInfo`, que baixa o catálogo de presentes da sala durante a conexão (`gift/list/`). Essa requisição é assinada pela **rota de assinatura de URL da Euler Stream, que é premium** (plano Business; relatos de uso do conector citam a mensagem `This endpoint requires a Business plan`). Sem um plano que a inclua, a Euler responde 403, o conector lança `PremiumFeatureError` e a conexão inteira é abortada **antes** de o WebSocket ser pedido, mesmo com a `SIGN_API_KEY` configurada.
+
+O VotaLive não precisa desse catálogo: id, nome, tipo e valor em moedas já vêm em cada evento de presente (`gift.id`, `gift.name`, `gift.type`, `gift.diamondCount`), e o parser só usa `extendedGiftInfo` como enriquecimento opcional. Por isso a opção fica **desligada**, e a assinatura do WebSocket continua usando a `SIGN_API_KEY`. Para ligá-la (somente com plano Business):
+
+```bash
+TIKTOK_EXTENDED_GIFT_INFO=true
+```
+
+`GET /healthz` mostra `extendedGiftInfo` e o log de inicialização avisa quando ela está ligada. Se um presente chegar sem `gift.name`, ele aparece no log como `Presente #<id>`, não pontua e fica registrado como não mapeado; só uma LIVE real confirma como os nomes chegam sem o catálogo (veja *Testes e verificações*).
 
 ## Segurança dos controles
 
@@ -137,6 +149,7 @@ Nunca coloque o token no código, no Git ou em uma variável exposta ao navegado
 | `ALLOW_INSECURE_CONTROL` | `false` | Permite produção sem token; não recomendado |
 | `SIGN_API_KEY` | vazio | Chave da Euler Stream que assina a conexão do TikTok |
 | `TIKTOK_SKIP_EULER_FALLBACK` | `false` | Desativa a rota de fallback da Euler Stream ao descobrir a sala |
+| `TIKTOK_EXTENDED_GIFT_INFO` | `false` | Liga o catálogo de presentes (rota premium `gift/list/`, plano Business); sem o plano a conexão falha |
 
 ## Testes e verificações
 
@@ -157,7 +170,7 @@ git push
 
 Depois, em **Actions → Smoke test produção → Run workflow**, ele consulta `/healthz` e `/api/state` do domínio público e imprime a fase da conexão com o motivo do erro (se houver) e o placar atual. O arquivo fica em `ci/` porque a conexão de GitHub App usada pela automação não tem permissão `workflows` para criar arquivos em `.github/workflows/` diretamente.
 
-Os testes cobrem regras de presentes, nomes normalizados, formato v3 e legado, combos, deduplicação, métricas, persistência lógica e troca automática de sessão por `roomId`.
+Os testes cobrem regras de presentes, nomes normalizados, formato v3 e legado, combos, deduplicação, métricas, persistência lógica e troca automática de sessão por `roomId`. Também rodam o conector real contra um cliente Euler Stream falso (sem rede) para provar que, por padrão, a conexão não usa a rota premium `gift/list/` e que a recusa de plano vira `kind: "plan"`.
 
 A integração com uma LIVE real ainda depende de uma conta que esteja transmitindo e do comportamento atual dos serviços do TikTok. Se o TikTok mudar o nome localizado de um presente, adicione o alias em `src/gifts.js` e inclua um caso de teste.
 
