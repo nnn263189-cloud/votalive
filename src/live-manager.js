@@ -1,5 +1,6 @@
 import {
   ControlEvent,
+  ErrorReason,
   RoomIdRouteConfig,
   TikTokLiveConnection,
   WebcastEvent,
@@ -41,6 +42,38 @@ export function applyEulerFallbackSetting({
   return routeConfig.skipFetchRoomIdFromEulerRoute;
 }
 
+/**
+ * Opt-in for the connector's `enableExtendedGiftInfo`. When on, `connect()`
+ * downloads the room gift list from TikTok's `gift/list/`, and that request is
+ * signed through Euler Stream's URL-signing route, a premium route (Business
+ * plan). Without the plan the sign server answers 403, the connector throws
+ * `PremiumFeatureError` and the whole connection is aborted before the
+ * WebSocket is even requested.
+ *
+ * VotaLive does not need the catalog: id, name, type and diamond count already
+ * arrive inside every gift message (`gift.*`), and `parseGiftEvent` only uses
+ * `extendedGiftInfo` as optional enrichment. Only the literal "true" enables it.
+ */
+export function extendedGiftInfoEnabled(env = process.env) {
+  return String(env?.TIKTOK_EXTENDED_GIFT_INFO ?? '').trim().toLowerCase() === 'true';
+}
+
+/**
+ * Options handed to `TikTokLiveConnection`. The Euler key keeps signing the
+ * WebSocket handshake; the premium gift catalog stays off unless requested.
+ */
+export function buildConnectionOptions({
+  signApiKey = resolveSignApiKey(),
+  extendedGiftInfo = extendedGiftInfoEnabled(),
+} = {}) {
+  const options = {
+    processInitialData: false,
+    enableExtendedGiftInfo: extendedGiftInfo === true,
+  };
+  if (signApiKey) options.signApiKey = signApiKey;
+  return options;
+}
+
 function errorTexts(error) {
   const candidates = [
     error?.exception?.message,
@@ -53,15 +86,25 @@ function errorTexts(error) {
   return candidates.filter((item) => typeof item === 'string' && item.trim());
 }
 
-export function connectorErrorMessage(error) {
+/** Untouched message of the error, used for classification. */
+function rawErrorMessage(error) {
   const candidates = [
     error?.exception?.message,
     error?.info,
     error?.message,
     typeof error === 'string' ? error : '',
   ];
-  const message = candidates.find((item) => typeof item === 'string' && item.trim());
-  return (message || 'Falha desconhecida ao conectar ao TikTok.').trim().slice(0, 300);
+  return candidates.find((item) => typeof item === 'string' && item.trim()) ?? '';
+}
+
+/**
+ * Short, single-line text for the panel and /healthz. The connector's sign
+ * errors are multi-line boxes ("SIGN SERVER MESSAGE"); whitespace is collapsed
+ * so the JSON stays readable.
+ */
+export function connectorErrorMessage(error) {
+  const message = rawErrorMessage(error).replace(/\s+/g, ' ').trim();
+  return (message || 'Falha desconhecida ao conectar ao TikTok.').slice(0, 300);
 }
 
 /**
@@ -75,12 +118,23 @@ function nestedErrors(error) {
   return Array.isArray(nested) ? nested.filter((item) => item && typeof item === 'object') : [];
 }
 
+/**
+ * The error plus what it wraps: the connector's `error` event delivers the real
+ * failure as `{ info, exception }`, and composite routes list their causes.
+ * Used for structured signals (class, `reason`, `code`), never for free text.
+ */
+function errorChain(error) {
+  return [error, error?.exception, ...nestedErrors(error)].filter(
+    (item) => item && typeof item === 'object',
+  );
+}
+
 const GENERIC_ERROR_NAMES = new Set(['Error', 'Object', 'TypeError', 'RangeError', 'EventEmitter']);
 
 /** Short, non-sensitive identifiers of the underlying failures (codes/classes). */
 export function connectorErrorCodes(error) {
   const codes = [];
-  for (const item of [error, ...nestedErrors(error)]) {
+  for (const item of errorChain(error)) {
     const candidate = [item?.code, item?.name, item?.constructor?.name].find(
       (value) => typeof value === 'string' && value.trim(),
     );
@@ -124,18 +178,50 @@ const ERROR_HINTS = [
 const ROOM_ID_HINT =
   'A sala da LIVE não pôde ser descoberta: confirme que o @ está correto e que o criador está transmitindo agora. Se persistir, configure a SIGN_API_KEY e tente de novo.';
 
+// Plan errors: the Euler sign server answered, but the plan behind the key does
+// not include the route (connector class `PremiumFeatureError`, reason
+// "Premium Feature"). The cure is not "define SIGN_API_KEY" (the signing
+// hint), so this kind is checked before the generic signing patterns.
+const PLAN_ERROR_PATTERN =
+  /\[premium feature\]|requires? (?:an? )?(?:business|paid|premium|enterprise)\b|business plan|paid plan|permission from the signature provider/i;
+
+// The URL-signing route (`fetchWebcastSignatureFromEulerRoute`) is only used by
+// this app to download the gift catalog (`gift/list/`), which is opt-in.
+const URL_SIGNING_PATTERN = /sign this url|fetchWebcastSignatureFromEulerRoute/i;
+
+const PLAN_HINT_GIFT_CATALOG =
+  'A Euler Stream negou a assinatura de URL do catálogo de presentes (gift/list/): essa rota premium exige o plano Business. O catálogo é opcional — remova TIKTOK_EXTENDED_GIFT_INFO do serviço (Railway → Variables), reinicie o deploy e conecte de novo — ou use uma chave de plano Business.';
+
+const PLAN_HINT =
+  'A Euler Stream negou esta rota por limite de plano (recurso premium). Confira o plano e a cota em eulerstream.com; trocar a chave por outra do mesmo plano não resolve.';
+
+function isPlanError(chain, haystack) {
+  // A rate limit is its own kind even when the server text pitches a plan.
+  if (chain.some((item) => item.reason === ErrorReason.RATE_LIMIT)) return false;
+  if (chain.some((item) => item.reason === ErrorReason.PREMIUM_FEATURE)) return true;
+  return PLAN_ERROR_PATTERN.test(haystack);
+}
+
 /**
  * Classifies the connector error so the panel and /healthz can show what to do
  * next instead of only the raw message. The aggregated causes are inspected
- * because composite routes only report "from all sources" on the outside.
+ * because composite routes only report "from all sources" on the outside, and
+ * the whole text (not the truncated message shown to the user) is searched.
  */
 export function connectorErrorDetails(error) {
   const message = connectorErrorMessage(error);
-  const haystack = [message, ...nestedErrors(error).flatMap((item) => errorTexts(item))]
+  const haystack = [
+    rawErrorMessage(error).replace(/\s+/g, ' ').trim(),
+    ...nestedErrors(error).flatMap((item) => errorTexts(item)),
+  ]
     .join(' | ')
     .slice(0, 2_000);
   const codes = connectorErrorCodes(error);
 
+  if (isPlanError(errorChain(error), haystack)) {
+    const hint = URL_SIGNING_PATTERN.test(haystack) ? PLAN_HINT_GIFT_CATALOG : PLAN_HINT;
+    return { message, kind: 'plan', hint, codes };
+  }
   for (const entry of ERROR_HINTS) {
     if (entry.pattern.test(haystack)) return { message, kind: entry.kind, hint: entry.hint, codes };
   }
@@ -145,19 +231,15 @@ export function connectorErrorDetails(error) {
   return { message, kind: 'unknown', hint: null, codes };
 }
 
-function defaultConnectionFactory(username, { signApiKey = resolveSignApiKey() } = {}) {
-  const options = {
-    processInitialData: false,
-    enableExtendedGiftInfo: true,
-  };
-  if (signApiKey) options.signApiKey = signApiKey;
-  return new TikTokLiveConnection(username, options);
+function defaultConnectionFactory(username, { signApiKey, extendedGiftInfo } = {}) {
+  return new TikTokLiveConnection(username, buildConnectionOptions({ signApiKey, extendedGiftInfo }));
 }
 
 export class LiveManager {
   constructor({
     connectionFactory = defaultConnectionFactory,
     signApiKey = resolveSignApiKey(),
+    extendedGiftInfo = extendedGiftInfoEnabled(),
     onStatus = () => {},
     onConnected = () => {},
     onGift = () => {},
@@ -168,6 +250,7 @@ export class LiveManager {
   } = {}) {
     this.connectionFactory = connectionFactory;
     this.signApiKey = signApiKey;
+    this.extendedGiftInfo = extendedGiftInfo === true;
     this.onStatus = onStatus;
     this.onConnected = onConnected;
     this.onGift = onGift;
@@ -256,7 +339,10 @@ export class LiveManager {
     }
 
     const username = this.username;
-    const connection = this.connectionFactory(username, { signApiKey: this.signApiKey });
+    const connection = this.connectionFactory(username, {
+      signApiKey: this.signApiKey,
+      extendedGiftInfo: this.extendedGiftInfo,
+    });
     this.connection = connection;
     let connected = false;
 

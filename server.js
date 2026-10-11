@@ -10,6 +10,7 @@ import { getSimulationGift, parseGiftEvent } from './src/gifts.js';
 import {
   applyEulerFallbackSetting,
   eulerFallbackDisabled,
+  extendedGiftInfoEnabled,
   LiveManager,
   resolveSignApiKey,
 } from './src/live-manager.js';
@@ -43,6 +44,7 @@ const ALLOWED_ORIGINS = new Set(
 const ADMIN_TOKEN_DIGEST = createHash('sha256').update(ADMIN_TOKEN, 'utf8').digest();
 const SIGN_API_KEY = resolveSignApiKey();
 const EULER_FALLBACK_DISABLED = applyEulerFallbackSetting();
+const EXTENDED_GIFT_INFO = extendedGiftInfoEnabled();
 
 if ((IS_PRODUCTION || IS_RAILWAY) && !ADMIN_TOKEN && !ALLOW_INSECURE_CONTROL) {
   throw new Error(
@@ -62,6 +64,11 @@ if (!SIGN_API_KEY) {
 if (EULER_FALLBACK_DISABLED) {
   console.warn(
     '[TikTok] TIKTOK_SKIP_EULER_FALLBACK=true: a rota de fallback da Euler Stream para descobrir a sala está desativada.',
+  );
+}
+if (EXTENDED_GIFT_INFO) {
+  console.warn(
+    '[TikTok] TIKTOK_EXTENDED_GIFT_INFO=true: a conexão baixa o catálogo de presentes pela rota premium gift/list/ da Euler Stream (plano Business). Sem o plano a conexão falha com PremiumFeatureError; remova a variável para desativar.',
   );
 }
 
@@ -128,6 +135,7 @@ function publish(type, extra = {}) {
 
 const liveManager = new LiveManager({
   signApiKey: SIGN_API_KEY,
+  extendedGiftInfo: EXTENDED_GIFT_INFO,
   onStatus: (status) => {
     connectionStatus = status;
     publish('status');
@@ -182,6 +190,7 @@ app.get('/healthz', (_request, response) => {
     codes: connectionStatus.codes,
     signing: Boolean(SIGN_API_KEY),
     eulerFallbackDisabled: EULER_FALLBACK_DISABLED,
+    extendedGiftInfo: EXTENDED_GIFT_INFO,
     sessionId: store.snapshot().session?.id || null,
   });
 });
@@ -347,7 +356,10 @@ server.listen(PORT, HOST, () => {
   console.log(`\n  VotaLive disponível em http://${HOST}:${boundPort}`);
   console.log(`  Estado: ${STATE_FILE || 'somente em memória'}`);
   console.log(`  Controles: ${ADMIN_TOKEN ? 'protegidos por token' : 'desbloqueados'}`);
-  console.log(`  Assinatura TikTok: ${SIGN_API_KEY ? 'SIGN_API_KEY configurada' : 'sem SIGN_API_KEY'}\n`);
+  console.log(`  Assinatura TikTok: ${SIGN_API_KEY ? 'SIGN_API_KEY configurada' : 'sem SIGN_API_KEY'}`);
+  console.log(
+    `  Catálogo de presentes: ${EXTENDED_GIFT_INFO ? 'ativo (rota premium)' : 'desativado (padrão)'}\n`,
+  );
 });
 
 let shuttingDown = false;
