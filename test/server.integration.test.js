@@ -90,6 +90,9 @@ test('servidor inicia, protege comandos e restaura o placar ao reconectar', { ti
   const baseUrl = `http://127.0.0.1:${port}`;
   const health = await fetch(`${baseUrl}/healthz`).then((response) => response.json());
   assert.equal(health.ok, true);
+  assert.equal(health.connection, 'idle');
+  assert.equal(health.username, null);
+  assert.equal(health.message, null);
   const page = await fetch(baseUrl).then((response) => response.text());
   assert.match(page, /id="totalParticipants"/);
   assert.match(page, /src="app\.js"/);
