@@ -1,0 +1,66 @@
+name: Smoke test produção
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL base do VotaLive em produção'
+        required: false
+        default: 'https://votalive-production.up.railway.app'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar /healthz
+        run: |
+          BASE="${{ inputs.url }}"
+          echo "== GET $BASE/healthz =="
+          curl -fsS -m 20 "$BASE/healthz" | tee /tmp/healthz.json
+          echo
+          node -e '
+            const fs = require("fs");
+            const health = JSON.parse(fs.readFileSync("/tmp/healthz.json", "utf8"));
+            if (health.ok !== true) {
+              console.error("healthz.ok != true:", JSON.stringify(health));
+              process.exit(1);
+            }
+            for (const field of ["connection", "username", "message"]) {
+              if (!(field in health)) {
+                console.error("Campo ausente no /healthz:", field);
+                process.exit(1);
+              }
+            }
+            console.log("healthz OK:", JSON.stringify(health));
+          '
+
+      - name: Verificar /api/state
+        run: |
+          BASE="${{ inputs.url }}"
+          echo "== GET $BASE/api/state =="
+          curl -fsS -m 20 "$BASE/api/state" | node -e '
+            let data = "";
+            process.stdin.on("data", (chunk) => { data += chunk; });
+            process.stdin.on("end", () => {
+              const payload = JSON.parse(data);
+              const state = payload.state || {};
+              const connection = payload.connection || {};
+              if (!state.scores || typeof state.scores.A !== "number") {
+                console.error("Estado inesperado:", JSON.stringify(payload));
+                process.exit(1);
+              }
+              console.log("api/state OK:", JSON.stringify({
+                type: payload.type,
+                authRequired: payload.authRequired,
+                phase: connection.phase,
+                username: connection.username,
+                message: connection.message,
+                scores: state.scores,
+                totalGifts: state.totalGifts,
+                sessionKind: state.session ? state.session.kind : null,
+              }));
+            });
+          '

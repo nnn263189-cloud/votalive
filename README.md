@@ -124,6 +124,17 @@ npm run check
 npm audit --omit=dev
 ```
 
+Para verificar o deployment em produção sem abrir o painel, ative o workflow de smoke test:
+
+```bash
+cp ci/smoke-production.yml .github/workflows/smoke-production.yml
+git add .github/workflows/smoke-production.yml
+git commit -m "Ativar smoke test de produção"
+git push
+```
+
+Depois, em **Actions → Smoke test produção → Run workflow**, ele consulta `/healthz` e `/api/state` do domínio público e imprime a fase da conexão com o motivo do erro (se houver) e o placar atual. O arquivo fica em `ci/` porque a conexão de GitHub App usada pela automação não tem permissão `workflows` para criar arquivos em `.github/workflows/` diretamente.
+
 Os testes cobrem regras de presentes, nomes normalizados, formato v3 e legado, combos, deduplicação, métricas, persistência lógica e troca automática de sessão por `roomId`.
 
 A integração com uma LIVE real ainda depende de uma conta que esteja transmitindo e do comportamento atual dos serviços do TikTok. Se o TikTok mudar o nome localizado de um presente, adicione o alias em `src/gifts.js` e inclua um caso de teste.
@@ -137,3 +148,4 @@ A integração com uma LIVE real ainda depende de uma conta que esteja transmiti
 - `src/live-manager.js` — conexão e reconexão com o TikTok LIVE.
 - `public/index.html` e `public/app.js` — painel.
 - `test/` — testes automatizados.
+- `ci/smoke-production.yml` — workflow de smoke test de produção (copie para `.github/workflows/` para ativar).
