@@ -7,7 +7,12 @@ import express from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import { getSimulationGift, parseGiftEvent } from './src/gifts.js';
-import { LiveManager } from './src/live-manager.js';
+import {
+  applyEulerFallbackSetting,
+  eulerFallbackDisabled,
+  LiveManager,
+  resolveSignApiKey,
+} from './src/live-manager.js';
 import { loadState, StatePersistence } from './src/persistence.js';
 import { VoteStore } from './src/state-store.js';
 
@@ -36,6 +41,8 @@ const ALLOWED_ORIGINS = new Set(
     .filter(Boolean),
 );
 const ADMIN_TOKEN_DIGEST = createHash('sha256').update(ADMIN_TOKEN, 'utf8').digest();
+const SIGN_API_KEY = resolveSignApiKey();
+const EULER_FALLBACK_DISABLED = applyEulerFallbackSetting();
 
 if ((IS_PRODUCTION || IS_RAILWAY) && !ADMIN_TOKEN && !ALLOW_INSECURE_CONTROL) {
   throw new Error(
@@ -46,6 +53,16 @@ if (!ADMIN_TOKEN) {
   console.warn('[Segurança] ADMIN_TOKEN não definido: os controles do painel estão desbloqueados.');
 } else if (ADMIN_TOKEN.length < 16) {
   console.warn('[Segurança] Use um ADMIN_TOKEN com pelo menos 16 caracteres aleatórios.');
+}
+if (!SIGN_API_KEY) {
+  console.warn(
+    '[TikTok] SIGN_API_KEY não definida: a assinatura usa o acesso compartilhado da Euler Stream e o TikTok pode recusar a conexão. Configure a chave no serviço e reinicie o deploy.',
+  );
+}
+if (EULER_FALLBACK_DISABLED) {
+  console.warn(
+    '[TikTok] TIKTOK_SKIP_EULER_FALLBACK=true: a rota de fallback da Euler Stream para descobrir a sala está desativada.',
+  );
 }
 
 const persistence = new StatePersistence(STATE_FILE);
@@ -77,6 +94,9 @@ let connectionStatus = {
   username: null,
   roomId: null,
   message: null,
+  kind: null,
+  hint: null,
+  codes: [],
   attempt: 0,
 };
 
@@ -107,6 +127,7 @@ function publish(type, extra = {}) {
 }
 
 const liveManager = new LiveManager({
+  signApiKey: SIGN_API_KEY,
   onStatus: (status) => {
     connectionStatus = status;
     publish('status');
@@ -144,8 +165,8 @@ const liveManager = new LiveManager({
     store.markSessionEnded();
     publish('stream_ended');
   },
-  onConnectorError: ({ message }) => {
-    publish('connector_warning', { message });
+  onConnectorError: ({ message, kind, hint, codes }) => {
+    publish('connector_warning', { message, kind, hint, codes });
   },
 });
 
@@ -156,6 +177,11 @@ app.get('/healthz', (_request, response) => {
     connection: connectionStatus.phase,
     username: connectionStatus.username,
     message: connectionStatus.message,
+    kind: connectionStatus.kind,
+    hint: connectionStatus.hint,
+    codes: connectionStatus.codes,
+    signing: Boolean(SIGN_API_KEY),
+    eulerFallbackDisabled: EULER_FALLBACK_DISABLED,
     sessionId: store.snapshot().session?.id || null,
   });
 });
@@ -320,7 +346,8 @@ server.listen(PORT, HOST, () => {
   const boundPort = typeof address === 'object' && address ? address.port : PORT;
   console.log(`\n  VotaLive disponível em http://${HOST}:${boundPort}`);
   console.log(`  Estado: ${STATE_FILE || 'somente em memória'}`);
-  console.log(`  Controles: ${ADMIN_TOKEN ? 'protegidos por token' : 'desbloqueados'}\n`);
+  console.log(`  Controles: ${ADMIN_TOKEN ? 'protegidos por token' : 'desbloqueados'}`);
+  console.log(`  Assinatura TikTok: ${SIGN_API_KEY ? 'SIGN_API_KEY configurada' : 'sem SIGN_API_KEY'}\n`);
 });
 
 let shuttingDown = false;

@@ -77,6 +77,26 @@ STATE_FILE=/data/votalive-state.json
 
 Sem volume, o estado continua sobrevivendo a recargas do painel e reconexões, mas pode ser perdido quando a plataforma recriar o container.
 
+## Conexão com o TikTok (assinatura pela Euler Stream)
+
+O `tiktok-live-connector` assina cada handshake do WebSocket por meio do serviço Euler Stream. Sem uma chave própria, o conector usa o acesso compartilhado, que o TikTok recusa com frequência: o painel exibe `ERRO` e a mensagem do conector (rota da Euler Stream, `401/402/403`, limite de uso ou recurso premium).
+
+Para liberar a conexão:
+
+1. Crie uma chave em <https://www.eulerstream.com>.
+2. No Railway, abra o serviço → **Variables** → adicione `SIGN_API_KEY` (segredo).
+3. Faça o redeploy do serviço: a chave é lida na inicialização.
+4. Abra o painel e conecte o `@username` de uma LIVE que esteja no ar.
+
+A chave nunca é gravada no Git nem enviada ao navegador; o servidor apenas informa se ela existe e qual foi o tipo da última falha:
+
+- `GET /healthz` devolve `signing`, `kind`, `hint` e `codes` (identificadores curtos das falhas internas), além de `connection`, `username` e `message`;
+- o painel mostra a dica acionável nos estados `ERRO` e `RECONECTANDO` e no aviso do TikTok;
+- o log do servidor avisa `SIGN_API_KEY não definida` quando a chave está ausente;
+- `kind` classifica a falha em `signing`, `rate_limit`, `offline`, `network` ou `unknown`.
+
+Se a falha for na descoberta da sala (`Failed to retrieve Room ID from Euler Stream … lack of permission`), a alternativa documentada pelo conector é desativar a rota de fallback com `TIKTOK_SKIP_EULER_FALLBACK=true`, mantendo apenas as rotas nativas do TikTok.
+
 ## Segurança dos controles
 
 Leitura do placar é pública. Os comandos que alteram o sistema — conectar, desconectar, simular presente e zerar — exigem `ADMIN_TOKEN` quando ele está configurado.
@@ -115,6 +135,8 @@ Nunca coloque o token no código, no Git ou em uma variável exposta ao navegado
 | `STATE_FILE` | `data/state.json` | Arquivo de persistência; use `off` para desativar |
 | `ALLOWED_ORIGINS` | mesma origem | Origens extras, separadas por vírgula |
 | `ALLOW_INSECURE_CONTROL` | `false` | Permite produção sem token; não recomendado |
+| `SIGN_API_KEY` | vazio | Chave da Euler Stream que assina a conexão do TikTok |
+| `TIKTOK_SKIP_EULER_FALLBACK` | `false` | Desativa a rota de fallback da Euler Stream ao descobrir a sala |
 
 ## Testes e verificações
 
@@ -138,6 +160,8 @@ Depois, em **Actions → Smoke test produção → Run workflow**, ele consulta 
 Os testes cobrem regras de presentes, nomes normalizados, formato v3 e legado, combos, deduplicação, métricas, persistência lógica e troca automática de sessão por `roomId`.
 
 A integração com uma LIVE real ainda depende de uma conta que esteja transmitindo e do comportamento atual dos serviços do TikTok. Se o TikTok mudar o nome localizado de um presente, adicione o alias em `src/gifts.js` e inclua um caso de teste.
+
+A conexão com uma LIVE real só pode ser considerada validada quando: `/healthz` mostra `connection: "connected"` com a `roomId`, um presente genuíno enviado por um espectador aparece no histórico e o placar do candidato muda. Os testes automatizados e o smoke test de `/healthz` **não** cobrem esse caminho: eles não abrem a LIVE nem recebem presentes.
 
 ## Estrutura
 

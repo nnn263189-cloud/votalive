@@ -58,11 +58,11 @@ function escapeHtml(value) {
   }[character]));
 }
 
-function showToast(message) {
+function showToast(message, duration = 3_200) {
   elements.toast.textContent = message;
   elements.toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => elements.toast.classList.remove('show'), 3_200);
+  toastTimer = setTimeout(() => elements.toast.classList.remove('show'), duration);
 }
 
 function burst(symbol) {
@@ -176,7 +176,7 @@ function updateControls() {
 
 function setConnectionStatus(nextConnection, panelDisconnected = false) {
   if (nextConnection && typeof nextConnection === 'object') connection = nextConnection;
-  const { phase, username, message, attempt } = connection;
+  const { phase, username, message, hint, attempt } = connection;
   const badge = elements.liveBadge;
   badge.className = 'live';
 
@@ -202,7 +202,12 @@ function setConnectionStatus(nextConnection, panelDisconnected = false) {
   } else if (phase === 'reconnecting') {
     badge.classList.add('connecting');
     elements.liveText.textContent = 'RECONECTANDO À LIVE…';
-    elements.connectHint.textContent = `A conexão caiu. Tentativa automática ${attempt || 1} para @${username || ''}…`;
+    elements.connectHint.textContent = [
+      `A conexão caiu. Tentativa automática ${attempt || 1} para @${username || ''}…`,
+      hint,
+    ]
+      .filter(Boolean)
+      .join(' ');
     elements.btnConnect.style.display = 'none';
     elements.btnDisconnect.style.display = '';
   } else if (phase === 'ended') {
@@ -214,7 +219,9 @@ function setConnectionStatus(nextConnection, panelDisconnected = false) {
   } else if (phase === 'error') {
     badge.classList.add('error');
     elements.liveText.textContent = 'ERRO';
-    elements.connectHint.textContent = message || 'Falha na conexão. Confira se a LIVE está no ar e tente novamente.';
+    elements.connectHint.textContent = [message || 'Falha na conexão. Confira se a LIVE está no ar e tente novamente.', hint]
+      .filter(Boolean)
+      .join(' ');
     elements.btnConnect.style.display = '';
     elements.btnDisconnect.style.display = 'none';
   } else {
@@ -320,7 +327,8 @@ function handleMessage(message) {
   } else if (message.type === 'stream_ended') {
     showToast('A LIVE terminou. O resultado foi preservado.');
   } else if (message.type === 'connector_warning') {
-    showToast(`TikTok: ${message.message}`);
+    const detail = message.hint ? `${message.message} — ${message.hint}` : message.message;
+    showToast(`TikTok: ${detail}`, message.hint ? 12_000 : undefined);
   } else if (message.type === 'command_error') {
     if (message.code === 'unauthorized') authorized = false;
     showToast(message.message || 'Não foi possível executar o comando.');

@@ -1,4 +1,9 @@
-import { ControlEvent, TikTokLiveConnection, WebcastEvent } from 'tiktok-live-connector';
+import {
+  ControlEvent,
+  RoomIdRouteConfig,
+  TikTokLiveConnection,
+  WebcastEvent,
+} from 'tiktok-live-connector';
 
 export function normalizeUsername(value) {
   const username = String(value ?? '').trim().replace(/^@/, '');
@@ -7,6 +12,45 @@ export function normalizeUsername(value) {
     throw new Error('Username inválido. Use apenas letras, números, ponto e sublinhado.');
   }
   return username;
+}
+
+/**
+ * Reads the Euler Stream API key. The connector signs every WebSocket
+ * handshake through this service, so a missing key means shared, rate-limited
+ * access that TikTok frequently refuses.
+ */
+export function resolveSignApiKey(env = process.env) {
+  const key = String(env?.SIGN_API_KEY ?? '').trim();
+  return key || null;
+}
+
+export function eulerFallbackDisabled(env = process.env) {
+  return String(env?.TIKTOK_SKIP_EULER_FALLBACK ?? '').trim().toLowerCase() === 'true';
+}
+
+/**
+ * Opt-in escape hatch documented by the connector: when the room id cannot be
+ * resolved, it falls back to Euler Stream and that route needs permission. The
+ * caller can disable the fallback instead of granting it.
+ */
+export function applyEulerFallbackSetting({
+  enabled = eulerFallbackDisabled(),
+  routeConfig = RoomIdRouteConfig,
+} = {}) {
+  routeConfig.skipFetchRoomIdFromEulerRoute = Boolean(enabled);
+  return routeConfig.skipFetchRoomIdFromEulerRoute;
+}
+
+function errorTexts(error) {
+  const candidates = [
+    error?.exception?.message,
+    error?.info,
+    error?.message,
+    error?.code,
+    error?.name,
+    typeof error === 'string' ? error : '',
+  ];
+  return candidates.filter((item) => typeof item === 'string' && item.trim());
 }
 
 export function connectorErrorMessage(error) {
@@ -20,16 +64,100 @@ export function connectorErrorMessage(error) {
   return (message || 'Falha desconhecida ao conectar ao TikTok.').trim().slice(0, 300);
 }
 
-function defaultConnectionFactory(username) {
-  return new TikTokLiveConnection(username, {
+/**
+ * The connector aggregates the per-source failures of a composite route inside
+ * `config.requestErrs` (for example `InvalidResponseCompositeError` on
+ * "Failed to retrieve Room ID from all sources."). The actionable cause lives
+ * there, not in the outer message, so it must be inspected explicitly.
+ */
+function nestedErrors(error) {
+  const nested = error?.config?.requestErrs ?? error?.config?.errors ?? error?.errors;
+  return Array.isArray(nested) ? nested.filter((item) => item && typeof item === 'object') : [];
+}
+
+const GENERIC_ERROR_NAMES = new Set(['Error', 'Object', 'TypeError', 'RangeError', 'EventEmitter']);
+
+/** Short, non-sensitive identifiers of the underlying failures (codes/classes). */
+export function connectorErrorCodes(error) {
+  const codes = [];
+  for (const item of [error, ...nestedErrors(error)]) {
+    const candidate = [item?.code, item?.name, item?.constructor?.name].find(
+      (value) => typeof value === 'string' && value.trim(),
+    );
+    const code = candidate?.trim().slice(0, 40);
+    if (code && !codes.includes(code)) codes.push(code);
+  }
+  const specific = codes.filter((code) => !GENERIC_ERROR_NAMES.has(code));
+  return (specific.length ? specific : codes).slice(0, 5);
+}
+
+// Checked in order: the signing failure is listed first because it names a
+// concrete fix (SIGN_API_KEY); the aggregated text often also carries a
+// secondary network error, which would otherwise mask the actionable cause.
+const ERROR_HINTS = [
+  {
+    kind: 'signing',
+    pattern: /euler|sign ?api|signature|api key|\b40[123]\b|premium feature|missing token/i,
+    hint:
+      'A assinatura da conexão usa a Euler Stream. Defina a variável SIGN_API_KEY no serviço (Railway → Variables), reinicie o deploy e tente conectar novamente.',
+  },
+  {
+    kind: 'rate_limit',
+    pattern: /rate limit|too many requests|\b429\b/i,
+    hint:
+      'A Euler Stream recusou por limite de uso. Aguarde alguns minutos ou use uma SIGN_API_KEY com cota maior.',
+  },
+  {
+    kind: 'offline',
+    pattern: /isn'?t online|is not online|offline|not live|user ?offline/i,
+    hint:
+      'O criador não estava ao vivo no momento da conexão. Inicie a LIVE e conecte novamente.',
+  },
+  {
+    kind: 'network',
+    pattern: /econnrefused|econnreset|econnaborted|epipe|enotfound|eai_again|etimedout|socket hang up|network|timeout/i,
+    hint:
+      'O servidor não alcançou os serviços do TikTok/Euler Stream. Verifique a saída de rede da hospedagem e tente de novo.',
+  },
+];
+
+const ROOM_ID_HINT =
+  'A sala da LIVE não pôde ser descoberta: confirme que o @ está correto e que o criador está transmitindo agora. Se persistir, configure a SIGN_API_KEY e tente de novo.';
+
+/**
+ * Classifies the connector error so the panel and /healthz can show what to do
+ * next instead of only the raw message. The aggregated causes are inspected
+ * because composite routes only report "from all sources" on the outside.
+ */
+export function connectorErrorDetails(error) {
+  const message = connectorErrorMessage(error);
+  const haystack = [message, ...nestedErrors(error).flatMap((item) => errorTexts(item))]
+    .join(' | ')
+    .slice(0, 2_000);
+  const codes = connectorErrorCodes(error);
+
+  for (const entry of ERROR_HINTS) {
+    if (entry.pattern.test(haystack)) return { message, kind: entry.kind, hint: entry.hint, codes };
+  }
+  if (/room id from all sources/i.test(message)) {
+    return { message, kind: 'room_id', hint: ROOM_ID_HINT, codes };
+  }
+  return { message, kind: 'unknown', hint: null, codes };
+}
+
+function defaultConnectionFactory(username, { signApiKey = resolveSignApiKey() } = {}) {
+  const options = {
     processInitialData: false,
     enableExtendedGiftInfo: true,
-  });
+  };
+  if (signApiKey) options.signApiKey = signApiKey;
+  return new TikTokLiveConnection(username, options);
 }
 
 export class LiveManager {
   constructor({
     connectionFactory = defaultConnectionFactory,
+    signApiKey = resolveSignApiKey(),
     onStatus = () => {},
     onConnected = () => {},
     onGift = () => {},
@@ -39,6 +167,7 @@ export class LiveManager {
     reconnectDelays = [2_000, 5_000, 10_000, 20_000, 30_000],
   } = {}) {
     this.connectionFactory = connectionFactory;
+    this.signApiKey = signApiKey;
     this.onStatus = onStatus;
     this.onConnected = onConnected;
     this.onGift = onGift;
@@ -58,6 +187,9 @@ export class LiveManager {
       username: null,
       roomId: null,
       message: null,
+      kind: null,
+      hint: null,
+      codes: [],
       attempt: 0,
     };
   }
@@ -72,6 +204,9 @@ export class LiveManager {
       username: details.username ?? this.username ?? null,
       roomId: details.roomId ?? null,
       message: details.message ?? null,
+      kind: details.kind ?? null,
+      hint: details.hint ?? null,
+      codes: Array.isArray(details.codes) ? details.codes : [],
       attempt: details.attempt ?? 0,
     };
     this.onStatus(this.getStatus());
@@ -121,7 +256,7 @@ export class LiveManager {
     }
 
     const username = this.username;
-    const connection = this.connectionFactory(username);
+    const connection = this.connectionFactory(username, { signApiKey: this.signApiKey });
     this.connection = connection;
     let connected = false;
 
@@ -146,18 +281,19 @@ export class LiveManager {
     });
     connection.on(ControlEvent.ERROR, (error) => {
       if (this.connection !== connection || intentId !== this.intentId) return;
-      const message = connectorErrorMessage(error);
-      this.logger.error(`[TikTok] ${message}`);
-      this.onConnectorError({ message, error });
+      const details = connectorErrorDetails(error);
+      this.logger.error(`[TikTok] ${details.message}`);
+      if (details.hint) this.logger.warn(`[TikTok] ${details.hint}`);
+      this.onConnectorError({ ...details, error });
     });
     connection.on(WebcastEvent.GIFT, (data) => {
       if (this.connection !== connection || intentId !== this.intentId) return;
       try {
         this.onGift(data);
       } catch (error) {
-        const message = connectorErrorMessage(error);
-        this.logger.error('[TikTok] Falha ao processar presente:', message);
-        this.onConnectorError({ message, error });
+        const details = connectorErrorDetails(error);
+        this.logger.error('[TikTok] Falha ao processar presente:', details.message);
+        this.onConnectorError({ ...details, error });
       }
     });
     connection.on(WebcastEvent.STREAM_END, () => {
@@ -190,28 +326,33 @@ export class LiveManager {
 
       this.connection = null;
       await this.safeDisconnect(connection);
-      const message = connectorErrorMessage(error);
-      this.logger.error(`[TikTok] Não conectou em @${username}: ${message}`);
-      this.onConnectorError({ message, error });
+      const details = connectorErrorDetails(error);
+      this.logger.error(`[TikTok] Não conectou em @${username}: ${details.message}`);
+      if (details.hint) this.logger.warn(`[TikTok] ${details.hint}`);
+      this.onConnectorError({ ...details, error });
 
       if (isReconnect && this.shouldReconnect) {
-        this.scheduleReconnect(intentId, message);
+        this.scheduleReconnect(intentId, details);
       } else {
         this.shouldReconnect = false;
-        this.setStatus('error', { username, message });
+        this.setStatus('error', { username, ...details });
       }
       return this.getStatus();
     }
   }
 
-  scheduleReconnect(intentId, lastMessage = null) {
+  scheduleReconnect(intentId, lastError = null) {
     if (intentId !== this.intentId || !this.shouldReconnect || this.reconnectTimer) return;
     const index = Math.min(this.reconnectAttempt, this.reconnectDelays.length - 1);
     const delay = this.reconnectDelays[index];
     this.reconnectAttempt += 1;
+    const last = typeof lastError === 'string' ? { message: lastError } : lastError || {};
     this.setStatus('reconnecting', {
       username: this.username,
-      message: lastMessage,
+      message: last.message ?? null,
+      kind: last.kind ?? null,
+      hint: last.hint ?? null,
+      codes: last.codes ?? [],
       attempt: this.reconnectAttempt,
     });
 
