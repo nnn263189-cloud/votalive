@@ -262,16 +262,19 @@ sem `Idempotency-Key`, e imprime o status, a resposta e o uso de tokens:
 A chave é lida só de `EXPERIENTIAL_API_KEY` e nunca é impressa. Sem a chave o
 script sai com código 2 e explica o que falta.
 
-O mesmo script roda no GitHub Actions pelo workflow
-`.github/workflows/ai-live-smoke.yml`, que usa o secret
-`EXPERIENTIAL_API_KEY` do repositório (a chave nunca entra no código, no log
-nem no histórico do git). Para adicionar o secret:
+O mesmo script roda no GitHub Actions pelo workflow `ci/ai-live-smoke.yml`,
+que usa o secret `EXPERIENTIAL_API_KEY` do repositório (a chave nunca entra no
+código, no log nem no histórico do git). O arquivo fica em `ci/` porque a
+automação que publica este repositório não tem permissão para criar arquivos
+em `.github/workflows/`; copie-o à mão:
 
 ```bash
-gh secret set EXPERIENTIAL_API_KEY
+cp ci/ai-live-smoke.yml .github/workflows/ai-live-smoke.yml
+gh secret set EXPERIENTIAL_API_KEY   # cole a chave quando perguntar
 ```
 
-e disparar em **Actions → AI live smoke → Run workflow**.
+Depois, em **Actions → AI live smoke → Run workflow**, ele roda a verificação
+no runner do GitHub, que tem internet aberta.
 
 ## Testes e verificações
 
