@@ -24,6 +24,9 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter,
 button { font: inherit; }
 .app { min-height: 100vh; background: var(--bg); }
 .topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px clamp(16px,4vw,44px); background:var(--surface); border-bottom:1px solid var(--border); border-radius:0 0 26px 26px; }
+.topbar-right { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.topbar-link { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:999px; padding:8px 13px; color:var(--text); text-decoration:none; font-size:12px; font-weight:800; white-space:nowrap; }
+.topbar-link:hover { border-color:var(--gold); }
 .brand { display:flex; align-items:center; gap:11px; font-weight:850; font-size:22px; letter-spacing:-.7px; }
 .logo { display:grid; place-items:center; width:42px; height:42px; border-radius:14px; color:#fff; background:linear-gradient(135deg,#e6c900,#718b35); box-shadow:0 8px 22px #718b3533; }
 .brand-sub { margin:5px 0 0 53px; color:var(--muted); font-size:13px; }
@@ -237,7 +240,10 @@ button:disabled, .gift:disabled { opacity:.5; cursor:not-allowed; transform:none
 <div class="app">
   <header class="topbar">
     <div><div class="brand"><div class="logo">✓</div><span>VotaLive</span></div><div class="brand-sub">Apuração por presentes</div></div>
-    <div class="live" id="liveBadge"><span class="dot"></span> <span id="liveText">DESCONECTADO</span></div>
+    <div class="topbar-right">
+      <a class="topbar-link" href="/ai">✦ VotaLive AI</a>
+      <div class="live" id="liveBadge"><span class="dot"></span> <span id="liveText">DESCONECTADO</span></div>
+    </div>
   </header>
   <main>
     <div class="location">📍 Brasil</div>

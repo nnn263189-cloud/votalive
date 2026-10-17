@@ -150,6 +150,98 @@ Nunca coloque o token no código, no Git ou em uma variável exposta ao navegado
 | `SIGN_API_KEY` | vazio | Chave da Euler Stream que assina a conexão do TikTok |
 | `TIKTOK_SKIP_EULER_FALLBACK` | `false` | Desativa a rota de fallback da Euler Stream ao descobrir a sala |
 | `TIKTOK_EXTENDED_GIFT_INFO` | `false` | Liga o catálogo de presentes (rota premium `gift/list/`, plano Business); sem o plano a conexão falha |
+| `EXPERIENTIAL_API_KEY` | vazio | Chave do gateway Experiential; sem ela o app de IA (`/ai`) fica desativado |
+| `AI_BASE_URL` | `https://api.experientiallabs.ai/v1` | Base do gateway usada pelo app de IA |
+| `AI_CHAT_MODEL` | `gpt-6-luna` | Modelo de conversa e de código |
+| `AI_IMAGE_MODEL` | `gemini-3.1-flash-image` | Modelo de geração de imagens |
+| `AI_WORKSPACE_ROOT` | raiz do projeto | Pasta que o agente de código pode ler e alterar |
+| `AI_TEST_COMMAND` | `npm test` | Comando que o painel de IA executa ao testar |
+| `AI_TIMEOUT_MS` | `120000` | Tempo limite de cada chamada ao gateway |
+| `AI_MAX_AGENT_STEPS` | `12` | Passos máximo do agente de código por pedido |
+
+## App de IA (`/ai`)
+
+O projeto tem um app de IA próprio, no mesmo servidor e com a mesma chave de
+administrador do painel. Ele conversa, cria imagens, responde perguntas
+tipadas e — mediante a sua aprovação — altera o código do projeto.
+
+```bash
+EXPERIENTIAL_API_KEY='xpl_...' npm start
+# depois abra http://localhost:3000/ai
+```
+
+A chave é lida **apenas** de `EXPERIENTIAL_API_KEY`, no servidor. O navegador
+nunca a recebe: ela fica no backend, que fala com o gateway
+`https://api.experientiallabs.ai/v1` (compatível com a OpenAI). Sem a chave o
+app avisa que está desativado e as rotas respondem `503`.
+
+### O que dá para fazer
+
+| Aba | O que faz | Rota |
+|---|---|---|
+| **Conversar** | Chat com `gpt-6-luna`, resposta em streaming (SSE) | `POST /api/ai/chat` |
+| **Criar imagem** | Gera imagens e mostra o resultado na conversa | `POST /api/ai/image` |
+| **Mudar o código** | Agente que lê o projeto, propõe mudanças e roda os testes | `POST /api/ai/agent` |
+| **Decisão tipada** | Perguntas `predicate`, `choice` e `score` no `/v1/decisions` | `POST /api/ai/decision` |
+
+O painel da direita mostra os arquivos do projeto, as mudanças pendentes (com
+diff) e a saída dos testes.
+
+### O agente de código não age sozinho
+
+O agente recebe seis ferramentas: `list_files`, `read_file`, `write_file`,
+`edit_file`, `delete_file` e `run_tests`. As três de escrita **não gravam
+nada**: elas montam uma mudança pendente, o painel mostra o diff e só o botão
+“Aplicar alterações” grava no disco. “Descartar” joga fora. O `run_tests`
+roda o comando fixo configurado em `AI_TEST_COMMAND` — o modelo não escolhe o
+comando.
+
+Além disso:
+
+- caminhos são resolvidos dentro da pasta do projeto: `..`, caminhos absolutos
+  e links simbólicos para fora são recusados;
+- `run_tests` e as escritas ficam registradas na sessão, com TTL de 30 minutos;
+- nada de merge, push ou execução automática de uma escolha devolvida pelo
+  modelo.
+
+### Decisões tipadas
+
+O app usa o `POST /v1/decisions` do gateway com o modelo `gpt-6-luna-decisions`
+(nome exato). O corpo é `model`, `input` (texto, ou mensagens com partes
+`input_text` e `input_image` base64) e `questions`. Cada pergunta tem
+`instructions`, um `type` e, opcionalmente, um `name` único:
+
+- `predicate` — devolve a probabilidade de a afirmação ser verdadeira;
+- `choice` — devolve um valor entre as `choices` informadas;
+- `score` — devolve a nota média ponderada sobre os `levels` ordenados.
+
+Os limites do gateway são validados antes do envio: no máximo 32 perguntas, 64
+opções por `choice` e de 2 a 10 níveis por `score`. As respostas voltam na
+ordem das perguntas; uma pergunta sem `name` volta sem nome e uma recusa do
+modelo aparece como recusa, não como erro. O painel mostra a resposta, as
+probabilidades e o uso de tokens.
+
+Probabilidade e confiança não são garantia de acerto: a decisão é sempre
+inspeção humana, nunca execução automática.
+
+### Uma requisição por chamada
+
+Nenhuma chamada do app tem retry automático nem `Idempotency-Key`: um timeout
+pode ter deixado a requisição já cobrada. O timeout é limitado
+(`AI_TIMEOUT_MS`) e os erros de HTTP e de transporte aparecem na tela com o
+status e o corpo da resposta.
+
+### Arquivos
+
+- `src/ai/config.js` — leitura das variáveis de ambiente.
+- `src/ai/gateway.js` — cliente do gateway (chat, streaming, imagens, decisões).
+- `src/ai/decisions.js` — montage e validação das perguntas tipadas.
+- `src/ai/agent.js` — ferramentas do agente de código e mudanças pendentes.
+- `src/ai/workspace.js` — leitura e escrita dentro da pasta do projeto.
+- `src/ai/diff.js` — diff unificado para pré-visualizar as mudanças.
+- `src/ai/router.js` — rotas HTTP e sessões do app.
+- `public/ai.html` e `public/ai.js` — interface do app de IA.
+- `test/ai-*.test.js` — testes com gateway e filesystem simulados (sem rede).
 
 ## Testes e verificações
 
@@ -183,6 +275,8 @@ A conexão com uma LIVE real só pode ser considerada validada quando: `/healthz
 - `src/state-store.js` — sessão e placar compartilhado.
 - `src/persistence.js` — gravação atômica do estado.
 - `src/live-manager.js` — conexão e reconexão com o TikTok LIVE.
+- `src/ai/` — app de IA: gateway, decisões tipadas, agente de código e rotas.
 - `public/index.html` e `public/app.js` — painel.
+- `public/ai.html` e `public/ai.js` — app de IA.
 - `test/` — testes automatizados.
 - `ci/smoke-production.yml` — workflow de smoke test de produção (copie para `.github/workflows/` para ativar).
