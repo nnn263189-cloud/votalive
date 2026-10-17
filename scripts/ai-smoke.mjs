@@ -31,6 +31,7 @@ const gateway = new ExperientialGateway({
 });
 
 let failures = 0;
+const results = [];
 
 function heading(title) {
   console.log(`\n=== ${title} ===`);
@@ -38,6 +39,7 @@ function heading(title) {
 
 function report(label, ok, details = '') {
   console.log(`${ok ? 'OK  ' : 'FALHA'} ${label}${details ? ` — ${details}` : ''}`);
+  results.push({ name: label, ok, detail: details });
   if (!ok) failures += 1;
 }
 
@@ -84,6 +86,25 @@ if (wants('--decision')) {
     console.log(`     resposta bruta: ${JSON.stringify(result.answers[0])}`);
   } catch (error) {
     report('decisão', false, error.message);
+
+    // Diagnóstico: o modelo exigido pode não estar liberado na conta. Só
+    // testamos o alternative quando o gateway recusou o modelo de forma
+    // explícita (nunca em timeout ou erro de transporte, que podem ter
+    // cobrado).
+    const rejected = [400, 404, 422].includes(error?.status)
+      && /model|slug|not found|unknown/i.test(String(error.message));
+    if (rejected) {
+      console.log('     o gateway recusou o modelo; testando gpt-6-luna no mesmo endpoint…');
+      try {
+        const alternative = await gateway.decisions({ ...request, model: 'gpt-6-luna' });
+        const answer = findAnswer(alternative.answers, 'review');
+        const summary = describeAnswer(answer);
+        console.log(`     com gpt-6-luna: ${summary.summary} · uso: ${JSON.stringify(alternative.usage)}`);
+        console.log(`     bruto: ${JSON.stringify(alternative.answers[0])}`);
+      } catch (fallbackError) {
+        console.log(`     com gpt-6-luna também falhou: ${fallbackError.message}`);
+      }
+    }
   }
 }
 
@@ -106,7 +127,6 @@ if (wants('--chat')) {
     report('streaming', false, error.message);
   }
 }
-
 if (wants('--image')) {
   heading(`POST /v1/chat/completions (${config.imageModel}, imagem)`);
   try {
@@ -131,4 +151,9 @@ if (wants('--image')) {
 }
 
 console.log(`\n${failures === 0 ? 'Tudo certo.' : `${failures} seção(ões) com problema.`}`);
+console.log('\n--- resumo para colar ---');
+for (const step of results) {
+  console.log(`${step.ok ? 'OK' : 'FALHA'} | ${step.name} | ${step.detail}`);
+}
+console.log('--- fim ---');
 process.exit(failures === 0 ? 0 : 1);
