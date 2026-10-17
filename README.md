@@ -245,6 +245,14 @@ status e o corpo da resposta.
 
 ### Verificação real do gateway
 
+O botão **“Verificar gateway”**, no topo do app, faz três requisições reais
+(uma por item) e mostra o resultado de cada uma: os modelos disponíveis, a
+decisão no `gpt-6-luna-decisions` com a resposta lida pela posição da pergunta
+e o uso de tokens, e a conversa. Serve para conferir a chave e o formato das
+respostas no ambiente em que o app está rodando — laptop ou Railway.
+
+O mesmo pode ser feito pela linha de comando, na sua máquina:
+
 ```bash
 EXPERIENTIAL_API_KEY='xpl_...' npm run ai:smoke
 ```
@@ -275,6 +283,14 @@ gh secret set EXPERIENTIAL_API_KEY   # cole a chave quando perguntar
 
 Depois, em **Actions → AI live smoke → Run workflow**, ele roda a verificação
 no runner do GitHub, que tem internet aberta.
+
+### No Railway
+
+O serviço em <https://votalive-production.up.railway.app> já é o destino do
+deploy. Para o app de IA funcionar lá, crie a variável de ambiente
+`EXPERIENTIAL_API_KEY` no serviço do Railway (ela nunca entra no repositório) e
+faça um novo deploy. A partir daí, o botão “Verificar gateway” faz as chamadas
+reais a partir do Railway, que tem internet aberta.
 
 ## Testes e verificações
 

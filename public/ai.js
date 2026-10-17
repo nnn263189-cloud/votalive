@@ -12,6 +12,9 @@ const elements = {
   badgeKey: document.getElementById('badgeKey'),
   badgeModel: document.getElementById('badgeModel'),
   brandSub: document.getElementById('brandSub'),
+  btnVerify: document.getElementById('btnVerify'),
+  verifyPanel: document.getElementById('verifyPanel'),
+  verifyResult: document.getElementById('verifyResult'),
   tokenBox: document.getElementById('tokenBox'),
   adminToken: document.getElementById('adminToken'),
   btnToken: document.getElementById('btnToken'),
@@ -122,6 +125,46 @@ elements.btnToken.addEventListener('click', async () => {
   toast(state.token ? 'Token liberado para esta aba.' : 'Token apagado.');
   await refreshFiles();
 });
+
+/* -------------------------------------------------------------- verificação */
+
+elements.btnVerify.addEventListener('click', async () => {
+  elements.btnVerify.disabled = true;
+  elements.verifyPanel.hidden = false;
+  elements.verifyResult.innerHTML = '<div class="small">Consultando o gateway…</div>';
+
+  try {
+    const result = await api('/api/ai/verify', { method: 'POST', body: JSON.stringify({}) });
+    renderVerify(result);
+  } catch (error) {
+    const payload = error.payload;
+    if (payload?.steps) {
+      renderVerify(payload);
+      return;
+    }
+    elements.verifyResult.innerHTML = `<div class="msg error"><div class="who">erro</div><div class="text">${escapeHtml(error.message)}</div></div>`;
+  } finally {
+    elements.btnVerify.disabled = false;
+  }
+});
+
+function renderVerify(result) {
+  const steps = (result.steps || []).map((step) => {
+    const usage = step.data?.usage
+      ? ` · tokens: entrada ${step.data.usage.input_tokens ?? '?'} · saída ${step.data.usage.output_tokens ?? '?'}`
+      : '';
+    return `<div class="result" style="margin-top:8px">
+      <div class="metric"><span>${escapeHtml(step.name)}</span><strong>${step.ok ? 'OK' : 'falhou'}</strong></div>
+      <div class="small" style="margin-top:4px">${escapeHtml(step.detail || '')}${escapeHtml(usage)}</div>
+    </div>`;
+  }).join('');
+
+  const head = result.ok
+    ? '<div class="badge ok">gateway respondendo</div>'
+    : '<div class="badge bad">gateway com problema</div>';
+  elements.verifyResult.innerHTML = `${head}${steps}
+    <div class="hint" style="margin-top:8px">Cada item é uma requisição separada ao gateway. Probabilidade e confiança não são garantia de acerto.</div>`;
+}
 
 /* ------------------------------------------------------------------- modos */
 

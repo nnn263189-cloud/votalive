@@ -20,6 +20,22 @@ export function tokenMatches(supplied, expectedDigest) {
   return timingSafeEqual(digest, expectedDigest);
 }
 
+/** Executa uma verificação e vira um passo do relatório (sem estourar o erro). */
+async function verifyStep(name, run) {
+  try {
+    const result = await run();
+    return { name, ok: result.ok, detail: result.detail, data: result.data ?? null };
+  } catch (error) {
+    return {
+      name,
+      ok: false,
+      detail: error?.message || 'falha desconhecida',
+      data: null,
+      error: error?.message || 'falha desconhecida',
+    };
+  }
+}
+
 /** Guarda as sessões do app de IA (histórico + mudanças pendentes). */
 export class SessionStore {
   constructor({ ttlMs = SESSION_TTL_MS, max = MAX_SESSIONS } = {}) {
@@ -112,6 +128,78 @@ export function createAiRouter({ config, gateway, adminToken = '', sessionStore 
     } catch (error) {
       response.status(error?.status || 502).json({ error: 'gateway_error', message: error.message });
     }
+  });
+
+  // Verificação real do gateway: uma requisição por item, para o usuário
+  // conferir a chave e o formato das respostas com um clique no painel.
+  router.post('/verify', async (_request, response) => {
+    response.setHeader('Cache-Control', 'no-store');
+    if (!gateway.configured) {
+      return response.status(503).json({
+        ok: false,
+        error: 'not_configured',
+        message: 'Defina EXPERIENTIAL_API_KEY no servidor para usar o app de IA.',
+        steps: [],
+      });
+    }
+
+    const steps = [];
+
+    steps.push(await verifyStep('modelos', async () => {
+      const models = await gateway.listModels();
+      const hasDecisions = models.includes(config.decisionsModel);
+      return {
+        ok: true,
+        detail: `${models.length} slugs · ${config.decisionsModel} ${hasDecisions ? 'disponível' : 'AUSENTE'}`,
+        data: { models: models.slice(0, 20), hasDecisions },
+      };
+    }));
+
+    steps.push(await verifyStep('decisão (gpt-6-luna-decisions)', async () => {
+      const request = buildDecisionRequest({
+        input: 'Verificação do app: a chave do gateway responde com o formato esperado?',
+        questions: [{
+          type: 'choice',
+          name: 'review',
+          instructions: 'A resposta do gateway é utilizável pelo app?',
+          choices: [
+            { value: 'ok', description: 'A resposta tem o formato esperado.' },
+            { value: 'problema', description: 'A resposta veio em formato inesperado.' },
+          ],
+        }],
+      });
+      const result = await gateway.decisions(request);
+      const answer = findAnswer(result.answers, 'review');
+      const summary = describeAnswer(answer);
+      return {
+        ok: summary.found && !summary.refused,
+        detail: summary.summary,
+        data: { answer: summary, usage: result.usage, raw: result.answers[0] ?? null },
+      };
+    }));
+
+    steps.push(await verifyStep('conversa (chat)', async () => {
+      const result = await gateway.chat({
+        model: config.chatModel,
+        messages: [{ role: 'user', content: 'Responda só: ok' }],
+      });
+      return {
+        ok: Boolean(result.text && result.text.trim()),
+        detail: result.text ? result.text.trim().slice(0, 120) : 'resposta vazia',
+        data: { usage: result.usage, model: result.model },
+      };
+    }));
+
+    const ok = steps.every((step) => step.ok);
+    return response.status(ok ? 200 : 502).json({
+      ok,
+      steps,
+      models: {
+        chat: config.chatModel,
+        image: config.imageModel,
+        decisions: config.decisionsModel,
+      },
+    });
   });
 
   // Conversa com streaming (Server-Sent Events).

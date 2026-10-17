@@ -160,6 +160,7 @@ pre.view { margin: 0; max-height: 320px; overflow: auto; border: 1px solid var(-
     <div class="top-actions">
       <span class="badge" id="badgeKey">chave: …</span>
       <span class="badge" id="badgeModel">modelo: …</span>
+      <button class="btn" id="btnVerify">Verificar gateway</button>
       <div class="token-box" id="tokenBox" hidden>
         <input type="password" id="adminToken" placeholder="token de administrador" autocomplete="off">
         <button class="btn" id="btnToken">Liberar</button>
@@ -169,6 +170,14 @@ pre.view { margin: 0; max-height: 320px; overflow: auto; border: 1px solid var(-
   </header>
 
   <main>
+    <div class="panel" id="verifyPanel" hidden style="margin-bottom:14px">
+      <div class="panel-head">
+        <h2>Verificação do gateway</h2>
+        <span class="small">uma requisição por item, sem retry</span>
+      </div>
+      <div id="verifyResult"></div>
+    </div>
+
     <div class="tabs" id="tabs">
       <button class="tab active" data-mode="chat">Conversar</button>
       <button class="tab" data-mode="image">Criar imagem</button>

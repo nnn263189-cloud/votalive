@@ -239,6 +239,82 @@ test('o navegador de arquivos lista o projeto e abre um arquivo', async (t) => {
   assert.equal(escape.status, 400);
 });
 
+test('a verificação do gateway devolve o relatório das três checagens', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'votalive-rotas-'));
+  const server = await startServer({ workspaceRoot: root });
+  t.after(async () => {
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const response = await fetch(`${server.baseUrl}/api/ai/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.steps.length, 3);
+  assert.deepEqual(payload.steps.map((step) => step.name), [
+    'modelos',
+    'decisão (gpt-6-luna-decisions)',
+    'conversa (chat)',
+  ]);
+  assert.equal(payload.steps[0].data.hasDecisions, true);
+  assert.equal(payload.steps[1].data.answer.choice, 'accept');
+  assert.equal(payload.steps[1].data.usage.input_tokens, 20);
+});
+
+test('a verificação aponta a falha de uma etapa sem esconder as outras', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'votalive-rotas-'));
+  const gateway = mockGateway({
+    async decisions() {
+      throw new Error('HTTP 402 insufficient_quota');
+    },
+  });
+  const server = await startServer({ workspaceRoot: root, gateway });
+  t.after(async () => {
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const response = await fetch(`${server.baseUrl}/api/ai/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.steps[0].ok, true);
+  assert.equal(payload.steps[1].ok, false);
+  assert.match(payload.steps[1].detail, /insufficient_quota/);
+  assert.equal(payload.steps[2].ok, true);
+});
+
+test('a verificação avisa quando a chave não está configurada', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'votalive-rotas-'));
+  const server = await startServer({ workspaceRoot: root, gateway: mockGateway({ configured: false }) });
+  t.after(async () => {
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const response = await fetch(`${server.baseUrl}/api/ai/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(payload.ok, false);
+  assert.match(payload.message, /EXPERIENTIAL_API_KEY/);
+});
+
 test('a rota de testes devolve a saída do comando', async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), 'votalive-rotas-'));
   const server = await startServer({ workspaceRoot: root });
