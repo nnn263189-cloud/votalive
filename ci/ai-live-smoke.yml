@@ -1,0 +1,46 @@
+name: AI live smoke
+
+# Verificação real do gateway Experiential, a partir de um runner do GitHub
+# (o runner tem internet aberta; o sandbox de desenvolvimento não tem).
+#
+# A chave vem do secret EXPERIENTIAL_API_KEY do repositório: ela nunca entra
+# no código, no log nem no histórico do git. Adicione o secret com:
+#
+#   gh secret set EXPERIENTIAL_API_KEY   # cole a chave quando perguntar
+#
+# Para rodar: Actions → AI live smoke → Run workflow.
+# A imagem (--image) não vem por padrão porque custa mais.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sections:
+        description: 'Seções a verificar (ex.: --models --decision --chat)'
+        required: false
+        default: '--models --decision --chat'
+  push:
+    branches:
+      - arena/9d20212f-votalive
+    paths:
+      - 'scripts/ai-smoke.mjs'
+      - 'src/ai/**'
+      - '.github/workflows/ai-live-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verificar o gateway
+        env:
+          EXPERIENTIAL_API_KEY: ${{ secrets.EXPERIENTIAL_API_KEY }}
+          SECTIONS: ${{ inputs.sections || '--models --decision --chat' }}
+        run: node scripts/ai-smoke.mjs $SECTIONS

@@ -1,0 +1,48 @@
+VotaLive com App de IA
+=======================
+
+O que tem aqui
+--------------
+/ai            App de IA: conversar, criar imagem, mudar o código e
+               perguntar ao modelo de decisão (gpt-6-luna-decisions).
+src/ai/        Backend do app de IA (gateway, decisões, agente de código).
+scripts/ai-smoke.mjs
+               Verificação real do gateway, linha de comando.
+src/env-file.js
+               Leitura do arquivo .env.
+
+Como testar no Termux (Android)
+--------------------------------
+1) Instalar o essencial:
+
+     pkg install -y nodejs unzip
+
+2) Descompactar (após baixar este zip para a pasta ~/Downloads):
+
+     unzip ~/Downloads/votalive-ia.zip -d ~
+     cd ~/votalive
+
+3) Colocar a chave no .env (sem editor, tudo numa linha):
+
+     printf 'EXPERIENTIAL_API_KEY=COLE_AQUI_SUA_CHAVE\n' > .env
+
+4) Rodar a verificação real do gateway:
+
+     npm run ai:smoke
+
+   Nao precisa de npm install: o script usa so a biblioteca padrao do Node.
+   Ao final ele imprime um bloco "--- resumo para colar ---"; envie esse
+   texto para fechar o diagnostico.
+
+5) (Opcional) Abrir o app completo no navegador do celular:
+
+     npm ci
+     npm start
+     termux-open-url http://localhost:3000/ai
+
+   Se o npm ci reclamar de modulo nativo: pkg install python make g++
+
+Onde a chave NAO deve ficar
+----------------------------
+- Nunca no Git (o .env ja esta no .gitignore).
+- No Railway a va em Settings -> Variables do servico, nunca no repositorio.

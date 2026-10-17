@@ -14,8 +14,19 @@ import {
   LiveManager,
   resolveSignApiKey,
 } from './src/live-manager.js';
+import { loadEnvFile, projectEnvPath } from './src/env-file.js';
+import { readAiConfig } from './src/ai/config.js';
+import { ExperientialGateway } from './src/ai/gateway.js';
+import { createAiRouter } from './src/ai/router.js';
 import { loadState, StatePersistence } from './src/persistence.js';
 import { VoteStore } from './src/state-store.js';
+
+// O .env da raiz do projeto preenche o que o ambiente não define. O ambiente
+// real (Railway, Docker, CI) sempre manda.
+const { loaded: envVarsLoaded } = await loadEnvFile(projectEnvPath());
+if (envVarsLoaded > 0) {
+  console.log(`[Config] .env carregado (${envVarsLoaded} variável(is)).`);
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const requestedPort = process.env.PORT === undefined ? 3000 : Number(process.env.PORT);
@@ -45,6 +56,12 @@ const ADMIN_TOKEN_DIGEST = createHash('sha256').update(ADMIN_TOKEN, 'utf8').dige
 const SIGN_API_KEY = resolveSignApiKey();
 const EULER_FALLBACK_DISABLED = applyEulerFallbackSetting();
 const EXTENDED_GIFT_INFO = extendedGiftInfoEnabled();
+const AI_CONFIG = readAiConfig();
+const AI_GATEWAY = new ExperientialGateway({
+  apiKey: AI_CONFIG.apiKey,
+  baseUrl: AI_CONFIG.baseUrl,
+  timeoutMs: AI_CONFIG.timeoutMs,
+});
 
 if ((IS_PRODUCTION || IS_RAILWAY) && !ADMIN_TOKEN && !ALLOW_INSECURE_CONTROL) {
   throw new Error(
@@ -69,6 +86,11 @@ if (EULER_FALLBACK_DISABLED) {
 if (EXTENDED_GIFT_INFO) {
   console.warn(
     '[TikTok] TIKTOK_EXTENDED_GIFT_INFO=true: a conexão baixa o catálogo de presentes pela rota premium gift/list/ da Euler Stream (plano Business). Sem o plano a conexão falha com PremiumFeatureError; remova a variável para desativar.',
+  );
+}
+if (!AI_CONFIG.apiKey) {
+  console.warn(
+    '[IA] EXPERIENTIAL_API_KEY não definida: o app de IA (/ai) fica desativado. Configure a chave no serviço e reinicie.',
   );
 }
 
@@ -200,6 +222,19 @@ app.get('/api/state', (_request, response) => {
   response.json(publicPayload('snapshot', {
     authRequired: Boolean(ADMIN_TOKEN),
   }));
+});
+
+// App de IA: conversar, gerar imagens e mexer no código com aprovação humana.
+const ai = createAiRouter({
+  config: AI_CONFIG,
+  gateway: AI_GATEWAY,
+  adminToken: ADMIN_TOKEN,
+});
+app.use('/api/ai', ai.router);
+
+app.get('/ai', (_request, response) => {
+  response.setHeader('Cache-Control', 'no-store');
+  response.sendFile(path.join(__dirname, 'public', 'ai.html'));
 });
 
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -358,7 +393,10 @@ server.listen(PORT, HOST, () => {
   console.log(`  Controles: ${ADMIN_TOKEN ? 'protegidos por token' : 'desbloqueados'}`);
   console.log(`  Assinatura TikTok: ${SIGN_API_KEY ? 'SIGN_API_KEY configurada' : 'sem SIGN_API_KEY'}`);
   console.log(
-    `  Catálogo de presentes: ${EXTENDED_GIFT_INFO ? 'ativo (rota premium)' : 'desativado (padrão)'}\n`,
+    `  Catálogo de presentes: ${EXTENDED_GIFT_INFO ? 'ativo (rota premium)' : 'desativado (padrão)'}`,
+  );
+  console.log(
+    `  App de IA: ${AI_CONFIG.apiKey ? 'pronto' : 'sem EXPERIENTIAL_API_KEY'} em http://${HOST}:${boundPort}/ai\n`,
   );
 });
 

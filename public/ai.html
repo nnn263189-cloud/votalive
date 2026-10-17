@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f4f4f4">
+<title>VotaLive AI — converse, crie imagens e mexa no código</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#f4f4f4, #151713);
+  --surface: light-dark(#ffffff, #22251f);
+  --surface2: light-dark(#f1f1eb, #30342b);
+  --text: light-dark(#242a35, #f4f5ef);
+  --muted: light-dark(#626b75, #b5b9ae);
+  --border: light-dark(#e2d25d, #817a35);
+  --gold: #e0bd00;
+  --green: #718b35;
+  --red: #c0392b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+button, input, select, textarea { font: inherit; }
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 16px clamp(14px, 3vw, 32px); background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 11px; font-weight: 850; font-size: 20px; letter-spacing: -.6px; }
+.logo {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 13px; color: #fff;
+  background: linear-gradient(135deg, #e6c900, #718b35); box-shadow: 0 8px 22px #718b3533; font-size: 18px;
+}
+.brand-sub { margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.top-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.badge {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 11px; color: var(--muted); font-size: 11px; font-weight: 750;
+}
+.badge.ok { color: #fff; background: var(--green); border-color: transparent; }
+.badge.warn { color: #7a5c00; background: #f6e39a; border-color: transparent; }
+.badge.bad { color: #fff; background: var(--red); border-color: transparent; }
+.btn {
+  border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+  border-radius: 12px; padding: 9px 14px; font-size: 13px; font-weight: 750; cursor: pointer;
+}
+.btn:hover { border-color: var(--gold); }
+.btn.primary { background: var(--green); border-color: transparent; color: #fff; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.token-box { display: flex; gap: 6px; }
+.token-box input {
+  width: 190px; border: 1px solid var(--border); background: var(--surface2); color: var(--text);
+  border-radius: 10px; padding: 8px 10px; font-size: 13px;
+}
+
+main { width: min(1400px, 100%); margin: auto; padding: 18px clamp(14px, 3vw, 28px) 30px; flex: 1; }
+.tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.tab {
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 800; cursor: pointer;
+}
+.tab.active { background: var(--gold); border-color: transparent; color: #241f00; }
+.layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.panel { border: 1px solid var(--border); background: var(--surface); border-radius: 20px; padding: 18px; min-width: 0; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+h2 { margin: 0; font-size: 17px; letter-spacing: -.4px; }
+h3 { margin: 0 0 8px; font-size: 14px; letter-spacing: -.2px; }
+.small { color: var(--muted); font-size: 12px; }
+.panel-body { border-top: 1px solid var(--border); padding-top: 14px; }
+
+.messages { display: flex; flex-direction: column; gap: 12px; min-height: 260px; max-height: 58vh; overflow-y: auto; padding-right: 4px; }
+.msg { border: 1px solid var(--border); border-radius: 14px; padding: 11px 13px; background: var(--surface2); }
+.msg.user { background: color-mix(in srgb, var(--gold) 16%, var(--surface2)); }
+.msg .who { font-size: 11px; font-weight: 850; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 5px; }
+.msg .text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.55; }
+.msg.error { border-color: var(--red); }
+.step { border: 1px dashed var(--border); border-radius: 12px; padding: 9px 11px; background: var(--surface); }
+.step .tool { font-weight: 800; font-size: 12px; color: var(--green); }
+.step .detail { margin-top: 4px; font-size: 12px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.composer { margin-top: 14px; display: flex; gap: 8px; }
+.composer textarea {
+  flex: 1; resize: vertical; min-height: 62px; border: 1px solid var(--border); border-radius: 14px;
+  background: var(--surface2); color: var(--text); padding: 12px;
+}
+.hint { color: var(--muted); font-size: 11px; margin-top: 6px; }
+
+.form-row { display: grid; gap: 10px; margin-bottom: 12px; }
+.form-row label { display: block; font-size: 12px; font-weight: 800; color: var(--muted); margin-bottom: 4px; }
+input[type="text"], input[type="password"], select, textarea {
+  width: 100%; border: 1px solid var(--border); border-radius: 11px; background: var(--surface2);
+  color: var(--text); padding: 10px 11px;
+}
+textarea { resize: vertical; min-height: 92px; font-family: inherit; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.option-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.4fr) auto; gap: 8px; margin-bottom: 7px; }
+
+.result { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: var(--surface2); margin-top: 12px; }
+.metric { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 3px 0; }
+.metric span:first-child { color: var(--muted); }
+.prob { display: grid; gap: 5px; margin-top: 8px; }
+.prob-line { display: grid; grid-template-columns: minmax(90px, 150px) 1fr auto; gap: 8px; align-items: center; font-size: 12px; }
+.bar { height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--text) 12%, transparent); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--green); }
+.img-preview { max-width: 100%; border-radius: 14px; border: 1px solid var(--border); margin-top: 12px; }
+
+.changes { display: flex; flex-direction: column; gap: 12px; }
+.change { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.change-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 9px 12px; background: var(--surface2); }
+.change-head strong { font-size: 13px; overflow-wrap: anywhere; }
+.diff { margin: 0; padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; overflow-x: auto; background: var(--surface); }
+.diff .add { color: #2e7d32; }
+.diff .del { color: #c0392b; }
+.diff .hunk { color: #1565c0; }
+.diff .ctx { color: var(--muted); }
+.files { max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; }
+.file-item {
+  display: flex; justify-content: space-between; gap: 8px; padding: 7px 11px; cursor: pointer;
+  border-bottom: 1px solid var(--border); font-size: 12.5px;
+}
+.file-item:last-child { border-bottom: none; }
+.file-item:hover { background: var(--surface2); }
+.file-item .path { overflow-wrap: anywhere; }
+.file-item .size { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.file-view { margin-top: 10px; }
+pre.view { margin: 0; max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 12px; padding: 10px; font-size: 12px; }
+.test-out {
+  margin-top: 10px; max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+  white-space: pre-wrap; background: var(--surface2);
+}
+.toast {
+  position: fixed; right: 18px; bottom: 18px; max-width: 340px; z-index: 40;
+  border: 1px solid var(--border); border-radius: 12px; padding: 11px 14px; background: var(--surface);
+  font-size: 13px; box-shadow: 0 12px 30px #0002; opacity: 0; pointer-events: none; transition: opacity .2s ease;
+}
+.toast.show { opacity: 1; }
+.toast.bad { border-color: var(--red); color: var(--red); }
+.empty { color: var(--muted); font-size: 13px; text-align: center; padding: 28px 12px; }
+@media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">✦</div>
+      <div>
+        <div>VotaLive AI</div>
+        <div class="brand-sub" id="brandSub">conversar · imagens · código</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span class="badge" id="badgeKey">chave: …</span>
+      <span class="badge" id="badgeModel">modelo: …</span>
+      <button class="btn" id="btnVerify">Verificar gateway</button>
+      <div class="token-box" id="tokenBox" hidden>
+        <input type="password" id="adminToken" placeholder="token de administrador" autocomplete="off">
+        <button class="btn" id="btnToken">Liberar</button>
+      </div>
+      <a class="btn ghost" href="/">Voltar ao placar</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="panel" id="verifyPanel" hidden style="margin-bottom:14px">
+      <div class="panel-head">
+        <h2>Verificação do gateway</h2>
+        <span class="small">uma requisição por item, sem retry</span>
+      </div>
+      <div id="verifyResult"></div>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-mode="chat">Conversar</button>
+      <button class="tab" data-mode="image">Criar imagem</button>
+      <button class="tab" data-mode="code">Mudar o código</button>
+      <button class="tab" data-mode="decision">Decisão tipada</button>
+    </div>
+
+    <div class="layout">
+      <section class="panel">
+        <div class="panel-head">
+          <h2 id="panelTitle">Conversa</h2>
+          <span class="small" id="panelHint">gpt-6-luna</span>
+        </div>
+
+        <div id="chatView">
+          <div class="messages" id="messages"></div>
+          <div class="composer">
+            <textarea id="prompt" placeholder="Pergunte, peça uma ideia, descreva a mudança que quer no código…"></textarea>
+            <button class="btn primary" id="btnSend">Enviar</button>
+          </div>
+          <div class="hint" id="composerHint">Enter envia · Shift+Enter quebra a linha</div>
+        </div>
+
+        <div id="imageView" hidden>
+          <div class="form-row">
+            <label for="imagePrompt">Prompt da imagem</label>
+            <textarea id="imagePrompt" placeholder="Ex.: pôster minimalista de uma live de votação, fundo verde e dourado, tipografia grande"></textarea>
+          </div>
+          <div class="grid2">
+            <div class="form-row">
+              <label for="imageModel">Modelo de imagem</label>
+              <input type="text" id="imageModel" placeholder="gemini-3.1-flash-image">
+            </div>
+            <div class="form-row">
+              <label for="imageSize">Tamanho</label>
+              <select id="imageSize">
+                <option value="">padrão do modelo</option>
+                <option value="1024x1024">1024x1024</option>
+                <option value="1536x1024">1536x1024</option>
+                <option value="1024x1536">1024x1536</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn primary" id="btnImage">Gerar imagem</button>
+          <div id="imageResult"></div>
+        </div>
+
+        <div id="decisionView" hidden>
+          <div class="form-row">
+            <label for="decisionInput">Evidência avaliada (texto)</label>
+            <textarea id="decisionInput" placeholder="Cole aqui o texto que o modelo deve avaliar."></textarea>
+          </div>
+          <div class="grid2">
+            <div class="form-row">
+              <label for="decisionType">Tipo de pergunta</label>
+              <select id="decisionType">
+                <option value="choice">choice — escolhe um valor</option>
+                <option value="predicate">predicate — probabilidade</option>
+                <option value="score">score — nota ordenada</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="decisionName">Nome da pergunta (opcional)</label>
+              <input type="text" id="decisionName" placeholder="review">
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="decisionInstructions">Instruções</label>
+            <input type="text" id="decisionInstructions" placeholder="O que exatamente o modelo deve responder?">
+          </div>
+          <div class="form-row" id="choiceBlock">
+            <label>Opções (value + descrição)</label>
+            <div id="choiceRows"></div>
+            <button class="btn" id="btnAddChoice" type="button">+ opção</button>
+          </div>
+          <div class="form-row" id="scoreBlock" hidden>
+            <label>Níveis (label + descrição, do menor para o maior)</label>
+            <div id="scoreRows"></div>
+            <button class="btn" id="btnAddLevel" type="button">+ nível</button>
+          </div>
+          <button class="btn primary" id="btnDecision">Perguntar ao modelo de decisão</button>
+          <div id="decisionResult"></div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-head">
+          <h2>Projeto</h2>
+          <span class="small" id="workspaceName">VotaLive</span>
+        </div>
+
+        <div class="panel-body">
+          <h3>Mudanças pendentes</h3>
+          <div id="pendingBox"><div class="empty">Nenhuma mudança esperando aprovação.</div></div>
+          <div class="hint" id="pendingHint">O agente propõe; você aprova. Nada é gravado sozinho.</div>
+
+          <h3 style="margin-top:18px">Testes</h3>
+          <button class="btn" id="btnTests">Rodar a suíte</button>
+          <div id="testBox"></div>
+
+          <h3 style="margin-top:18px">Arquivos</h3>
+          <div class="files" id="fileList"></div>
+          <div class="file-view" id="fileView"></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="ai.js" defer></script>
+</body>
+</html>
