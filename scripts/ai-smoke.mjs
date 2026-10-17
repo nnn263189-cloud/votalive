@@ -9,18 +9,30 @@
  *   EXPERIENTIAL_API_KEY='xpl_...' node scripts/ai-smoke.mjs
  *   node scripts/ai-smoke.mjs --decision --chat
  *   node scripts/ai-smoke.mjs --image      # custa mais (gera uma imagem)
+ *
+ * Se EXPERIENTIAL_API_KEY não estiver no ambiente, o script procura um .env
+ * na raiz do projeto (mesmo formato do .env.example). O .env nunca vai para o
+ * Git: está no .gitignore.
  */
 
 import { readAiConfig } from '../src/ai/config.js';
 import { buildDecisionRequest, describeAnswer, findAnswer } from '../src/ai/decisions.js';
 import { ExperientialGateway } from '../src/ai/gateway.js';
+import { loadEnvFile, projectEnvPath } from '../src/env-file.js';
 
 const flags = new Set(process.argv.slice(2));
 const wants = (name) => flags.has('--all') || flags.has(name);
 
+await loadEnvFile(projectEnvPath());
+
 const config = readAiConfig();
 if (!config.apiKey) {
-  console.error('EXPERIENTIAL_API_KEY não configurada. Exporte a chave no terminal e rode de novo.');
+  console.error('EXPERIENTIAL_API_KEY não configurada.');
+  console.error('  Opção 1: exporte a variável no terminal');
+  console.error("    EXPERIENTIAL_API_KEY='xpl_...' node scripts/ai-smoke.mjs");
+  console.error('  Opção 2: crie um arquivo .env na raiz do projeto com');
+  console.error("    EXPERIENTIAL_API_KEY=xpl_...");
+  console.error('  (o .env está no .gitignore e nunca é enviado ao Git)');
   process.exit(2);
 }
 

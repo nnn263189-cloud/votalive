@@ -24,6 +24,34 @@ Presentes desconhecidos aparecem no histórico e no total de presentes, mas **n�
 
 O `tiktok-live-connector` 2.5.0 declara Node 20+, mas a versão bloqueada de sua dependência `got` exige Node 22. Por isso, `.nvmrc`, `nixpacks.toml` e `package.json` fixam o ambiente em Node 22 ou superior. O projeto usa ES modules de forma nativa (`"type": "module"`).
 
+## Onde colocar a chave
+
+Em **um arquivo `.env` na raiz do projeto** (a pasta que tem o `package.json`).
+O `.env` já está no `.gitignore`, então a chave nunca vai para o Git:
+
+```bash
+cp .env.example .env
+```
+
+E edite o `.env`, deixando só o que você usa:
+
+```
+EXPERIENTIAL_API_KEY=xpl_ccd5f6d055bc12571679b5c5d1971b3fec6cbcc6
+ADMIN_TOKEN=gere-um-segredo-longo-e-aleatorio
+```
+
+O servidor e o script de verificação leem esse arquivo. O ambiente real
+(Railway, Docker, CI) tem prioridade sobre o `.env`.
+
+Se preferir não criar arquivo, a variável do terminal também funciona:
+
+```bash
+EXPERIENTIAL_API_KEY='xpl_...' npm start
+```
+
+No Railway, a variável vai no serviço (Settings → Variables), nunca no
+repositório.
+
 ## Rodar localmente
 
 ```bash
@@ -251,10 +279,11 @@ decisão no `gpt-6-luna-decisions` com a resposta lida pela posição da pergunt
 e o uso de tokens, e a conversa. Serve para conferir a chave e o formato das
 respostas no ambiente em que o app está rodando — laptop ou Railway.
 
-O mesmo pode ser feito pela linha de comando, na sua máquina:
+O mesmo pode ser feito pela linha de comando, na sua máquina (com a chave no
+`.env` da pasta do projeto, ou na variável do terminal):
 
 ```bash
-EXPERIENTIAL_API_KEY='xpl_...' npm run ai:smoke
+npm run ai:smoke
 ```
 
 O script (`scripts/ai-smoke.mjs`) faz **uma requisição por seção**, sem retry e
@@ -267,8 +296,9 @@ sem `Idempotency-Key`, e imprime o status, a resposta e o uso de tokens:
 | Conversa | `--chat` | `POST /v1/chat/completions` em streaming |
 | Imagem | `--image` | Gera uma imagem (custa mais; fora do padrão) |
 
-A chave é lida só de `EXPERIENTIAL_API_KEY` e nunca é impressa. Sem a chave o
-script sai com código 2 e explica o que falta.
+A chave é lida só de `EXPERIENTIAL_API_KEY` (variável do terminal ou `.env` da
+pasta do projeto) e nunca é impressa. Sem a chave o script sai com código 2 e
+explica as duas opções.
 
 O mesmo script roda no GitHub Actions pelo workflow `ci/ai-live-smoke.yml`,
 que usa o secret `EXPERIENTIAL_API_KEY` do repositório (a chave nunca entra no

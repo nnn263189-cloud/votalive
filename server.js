@@ -14,11 +14,19 @@ import {
   LiveManager,
   resolveSignApiKey,
 } from './src/live-manager.js';
+import { loadEnvFile, projectEnvPath } from './src/env-file.js';
 import { readAiConfig } from './src/ai/config.js';
 import { ExperientialGateway } from './src/ai/gateway.js';
 import { createAiRouter } from './src/ai/router.js';
 import { loadState, StatePersistence } from './src/persistence.js';
 import { VoteStore } from './src/state-store.js';
+
+// O .env da raiz do projeto preenche o que o ambiente não define. O ambiente
+// real (Railway, Docker, CI) sempre manda.
+const { loaded: envVarsLoaded } = await loadEnvFile(projectEnvPath());
+if (envVarsLoaded > 0) {
+  console.log(`[Config] .env carregado (${envVarsLoaded} variável(is)).`);
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const requestedPort = process.env.PORT === undefined ? 3000 : Number(process.env.PORT);
