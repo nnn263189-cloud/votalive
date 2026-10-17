@@ -8,6 +8,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
+    "ai:smoke": "node scripts/ai-smoke.mjs --models --decision --chat",
     "check": "node --check server.js && node --check public/app.js && node --check public/ai.js && node --check src/ai/gateway.js && node --check src/ai/agent.js && node --check src/ai/router.js && node --check src/ai/decisions.js && node --check src/ai/workspace.js && node --check src/ai/diff.js && node --check src/ai/config.js"
   },
   "engines": {

@@ -243,6 +243,36 @@ status e o corpo da resposta.
 - `public/ai.html` e `public/ai.js` — interface do app de IA.
 - `test/ai-*.test.js` — testes com gateway e filesystem simulados (sem rede).
 
+### Verificação real do gateway
+
+```bash
+EXPERIENTIAL_API_KEY='xpl_...' npm run ai:smoke
+```
+
+O script (`scripts/ai-smoke.mjs`) faz **uma requisição por seção**, sem retry e
+sem `Idempotency-Key`, e imprime o status, a resposta e o uso de tokens:
+
+| Seção | Comando | O que faz |
+|---|---|---|
+| Modelos | `--models` | `GET /v1/models` e confere se `gpt-6-luna-decisions` está liberado |
+| Decisão | `--decision` | `POST /v1/decisions` com a pergunta de revisão e lê a resposta pela posição |
+| Conversa | `--chat` | `POST /v1/chat/completions` em streaming |
+| Imagem | `--image` | Gera uma imagem (custa mais; fora do padrão) |
+
+A chave é lida só de `EXPERIENTIAL_API_KEY` e nunca é impressa. Sem a chave o
+script sai com código 2 e explica o que falta.
+
+O mesmo script roda no GitHub Actions pelo workflow
+`.github/workflows/ai-live-smoke.yml`, que usa o secret
+`EXPERIENTIAL_API_KEY` do repositório (a chave nunca entra no código, no log
+nem no histórico do git). Para adicionar o secret:
+
+```bash
+gh secret set EXPERIENTIAL_API_KEY
+```
+
+e disparar em **Actions → AI live smoke → Run workflow**.
+
 ## Testes e verificações
 
 ```bash
